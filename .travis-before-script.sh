@@ -31,5 +31,7 @@ php modules/composer_manager/scripts/init.php
 composer drupal-rebuild
 composer update -n --lock --verbose
 
-# Enable main module and submodules.
-drush en -y commerce commerce_product commerce_order
+# Enable the main Commerce modules.
+drush en -y commerce_product commerce_order views views_ui
+drush en -y commerce_cart
+drush cache-rebuild

@@ -56,6 +56,7 @@ abstract class CommerceTestBase extends WebTestBase {
    */
   protected function getAdministratorPermissions() {
     return [
+      'access content',
       'view the administration theme',
       'access administration pages',
       'configure store',

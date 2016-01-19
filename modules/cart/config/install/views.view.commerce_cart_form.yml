@@ -6,7 +6,7 @@ dependencies:
     - commerce_order
     - commerce_price
 id: commerce_cart_form
-label: 'Shopping cart form'
+label: 'Cart form'
 module: views
 description: ''
 tag: commerce_cart_form
@@ -60,9 +60,37 @@ display:
           summary: ''
           description: ''
           columns:
-            order_number: order_number
+            title: title
+            unit_price__amount: unit_price__amount
+            edit_quantity: edit_quantity
+            remove_button: remove_button
+            total_price__amount: total_price__amount
           info:
-            order_number:
+            title:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            unit_price__amount:
+              sortable: false
+              default_sort_order: asc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            edit_quantity:
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            remove_button:
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            total_price__amount:
               sortable: false
               default_sort_order: asc
               align: ''

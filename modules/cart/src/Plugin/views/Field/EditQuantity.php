@@ -17,7 +17,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Defines a form element for editing the line item quantity.
  *
- * @ViewsField("commerce_line_item_edit_quantity")
+ * @ViewsField("commerce_edit_quantity")
  */
 class EditQuantity extends FieldPluginBase {
 
@@ -86,6 +86,7 @@ class EditQuantity extends FieldPluginBase {
     // Make sure we do not accidentally cache this form.
     $form['#cache']['max-age'] = 0;
     // The view is empty, abort.
+    die(count($this->view->result));
     if (empty($this->view->result)) {
       unset($form['actions']);
       return;

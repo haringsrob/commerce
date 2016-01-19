@@ -12,7 +12,7 @@ use Drupal\commerce_order\Tests\OrderTestBase;
 /**
  * Tests the cart page.
  *
- * @group commerce
+ * @group commerce_cart
  */
 class CartTest extends OrderTestBase {
 
@@ -36,8 +36,11 @@ class CartTest extends OrderTestBase {
    * @var array
    */
   public static $modules = [
+    'commerce_order',
     'commerce_cart',
     'node',
+    'views',
+    'views_ui',
   ];
 
   /**
@@ -47,6 +50,7 @@ class CartTest extends OrderTestBase {
     return array_merge([
       'administer products',
       'access content',
+      'administer views',
     ], parent::getAdministratorPermissions());
   }
 
@@ -58,15 +62,22 @@ class CartTest extends OrderTestBase {
 
     $this->cart = \Drupal::service('commerce_cart.cart_provider')->createCart('default', $this->store);
     $this->cartManager = \Drupal::service('commerce_cart.cart_manager');
+    $this->cartManager->addEntity($this->cart, $this->variation);
   }
 
   /**
    * Test the cart page.
    */
   public function testCartPage() {
-    $this->cartManager->addEntity($this->cart, $this->variation);
-
-    $this->drupalGet('cart');
+    $a = \Drupal::service('plugin.manager.views.field');
+    $a->clearCachedDefinitions();
+    $b = $a->createInstance('commerce_edit_quantity');
+    $c  = get_class($b);
+    print $c;
+   // $a = $this->drupalGet('admin/structure/views/view/commerce_cart_form');
+   // print $a;
+    $a = $this->drupalGet('cart');
+   // print $a;
     // Confirm the presence and functioning of the Quantity field.
     $this->assertFieldByXPath("//input[starts-with(@id, 'edit-edit-quantity')]", NULL, 'Quantity field present.');
     $this->assertFieldByXPath("//input[starts-with(@id, 'edit-edit-quantity')]", 1, 'Quantity field has correct number of items.');
