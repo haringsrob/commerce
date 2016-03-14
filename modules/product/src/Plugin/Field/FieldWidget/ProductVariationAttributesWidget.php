@@ -185,25 +185,16 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
     $parents = array_merge($element['#field_parents'], [$items->getName(), $delta]);
     $user_input = (array) NestedArray::getValue($form_state->getUserInput(), $parents);
 
-    $selected_variation = $this->selectVariationFromUserInput($variations, $user_input);
-
-    // Set our default active one.
-    $active_variation = $selected_variation->id();
-
-    // If we have a url parsed, we change. Also, if there is user input, we can
-    // ignore the url.
-    if (!empty($user_input) && $default_variation = \Drupal::request()->query->get('dv')) {
-      if (
-        array_key_exists($default_variation, $variations)
-        && $default_variation <> $selected_variation->id()
-      ) {
-        $active_variation = $default_variation;
-      }
+    if (!empty($user_input)) {
+      $selected_variation = $this->selectVariationFromUserInput($variations, $user_input);
+    }
+    else {
+      $selected_variation = $this->selectVariationFromQueryString($variations);
     }
 
     $element['variation'] = [
       '#type' => 'value',
-      '#value' => $active_variation,
+      '#value' => $selected_variation->id(),
     ];
     $element['attributes'] = [
       '#type' => 'container',
@@ -254,7 +245,7 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
   }
 
   /**
-   * Selects a product variation based on user input containing attribute values.
+   * Selects a product variation based on user input having attribute values.
    *
    * If there's no user input (form viewed for the first time), the default
    * variation is returned.
@@ -278,7 +269,6 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
             $match = FALSE;
           }
         }
-
         if ($match) {
           $current_variation = $variation;
           break;
@@ -286,6 +276,30 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
       }
     }
 
+    return $current_variation;
+  }
+
+  /**
+   * Selects a product variation based on a query string.
+   *
+   * If there's no query string, the default variation is returned.
+   *
+   * @param \Drupal\commerce_product\Entity\ProductVariationInterface[] $variations
+   *   An array of product variations.
+   *
+   * @return \Drupal\commerce_product\Entity\ProductVariationInterface
+   *   The selected variation.
+   */
+  protected function selectVariationFromQueryString(array $variations) {
+    // Always set the default variation.
+    $current_variation = reset($variations);
+    // If our query string is present and it is one of the available variations
+    // we modify the current variation.
+    if ($query_string_id = \Drupal::request()->query->get('dv')) {
+      if (array_key_exists($query_string_id, $variations)) {
+        $current_variation = $variations[$query_string_id];
+      }
+    }
     return $current_variation;
   }
 
