@@ -59,7 +59,7 @@ class ProductVariation extends ContentEntityBase implements ProductVariationInte
       // Set our variation id as query string.
       $options = [
         'query' => [
-          'dv' => $this->id(),
+          self::CANONICAL_QUERY_PARAM => $this->id(),
         ],
       ];
 

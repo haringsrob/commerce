@@ -13,6 +13,7 @@ use Drupal\Core\Field\WidgetBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Plugin implementation of the 'commerce_product_variation_attributes' widget.
@@ -45,6 +46,13 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
   protected $variationStorage;
 
   /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+  /**
    * Constructs a new ProductVariationAttributesWidget object.
    *
    * @param string $plugin_id
@@ -61,11 +69,14 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
    *   The attribute field manager.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The request stack.
    */
-  public function __construct($plugin_id, $plugin_definition, FieldDefinitionInterface $field_definition, array $settings, array $third_party_settings, ProductAttributeFieldManagerInterface $attribute_field_manager, EntityTypeManagerInterface $entity_type_manager) {
+  public function __construct($plugin_id, $plugin_definition, FieldDefinitionInterface $field_definition, array $settings, array $third_party_settings, ProductAttributeFieldManagerInterface $attribute_field_manager, EntityTypeManagerInterface $entity_type_manager, RequestStack $request_stack) {
     parent::__construct($plugin_id, $plugin_definition, $field_definition, $settings, $third_party_settings);
 
     $this->attributeFieldManager = $attribute_field_manager;
+    $this->requestStack = $request_stack;
     $this->variationStorage = $entity_type_manager->getStorage('commerce_product_variation');
   }
 
@@ -80,7 +91,8 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
       $configuration['settings'],
       $configuration['third_party_settings'],
       $container->get('commerce_product.attribute_field_manager'),
-      $container->get('entity_type.manager')
+      $container->get('entity_type.manager'),
+      $container->get('request_stack')
     );
   }
 
@@ -295,7 +307,7 @@ class ProductVariationAttributesWidget extends WidgetBase implements ContainerFa
     $current_variation = reset($variations);
     // If our query string is present and it is one of the available variations
     // we modify the current variation.
-    if ($query_string_id = \Drupal::request()->query->get('dv')) {
+    if ($query_string_id = $this->requestStack->getCurrentRequest()->query->get(ProductVariationInterface::CANONICAL_QUERY_PARAM)) {
       if (array_key_exists($query_string_id, $variations)) {
         $current_variation = $variations[$query_string_id];
       }
