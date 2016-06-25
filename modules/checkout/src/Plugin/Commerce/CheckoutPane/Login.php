@@ -265,6 +265,20 @@ class Login extends CheckoutPaneBase implements CheckoutPaneInterface, Container
         ],
       ],
     ];
+    $pane_form['register']['name'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Username'),
+      '#maxlength' => USERNAME_MAX_LENGTH,
+      '#description' => $this->t("Several special characters are allowed, including space, period (.), hyphen (-), apostrophe ('), underscore (_), and the @ sign."),
+      '#required' => FALSE,
+      '#attributes' => [
+        'class' => ['username'],
+        'autocorrect' => 'off',
+        'autocapitalize' => 'off',
+        'spellcheck' => 'false',
+      ],
+      '#default_value' => '',
+    ];
     $pane_form['register']['mail'] = [
       '#type' => 'email',
       '#title' => $this->t('Email address'),
@@ -333,6 +347,10 @@ class Login extends CheckoutPaneBase implements CheckoutPaneInterface, Container
         $values = $form_state->getValue($pane_form['#parents']);
 
         // Basic validation to check if fields are filled in.
+        if (empty($values['register']['name'])) {
+          $form_state->setErrorByName('name', $this->t('Username is mandatory.'));
+          return;
+        }
         if (empty($values['register']['mail'])) {
           $form_state->setErrorByName('mail', $this->t('Email is mandatory.'));
           return;
@@ -349,28 +367,34 @@ class Login extends CheckoutPaneBase implements CheckoutPaneInterface, Container
           $form_state->setErrorByName('mail', $this->t('A user is already registered with this email.'));
           return;
         }
-        if ($user_storage->loadByProperties(['name' => $values['register']['mail']])) {
-          $form_state->setErrorByName('mail', $this->t('A user is already registered with this username, please contact support to resolve this issue.'));
+        if ($user_storage->loadByProperties(['name' => $values['register']['name']])) {
+          $form_state->setErrorByName('name', $this->t('A user is already registered with this username, please contact support to resolve this issue.'));
           return;
         }
         // Make sure the email would be a valid username.
-        if (user_validate_name($values['register']['mail'])) {
-          $form_state->setErrorByName('mail', $this->t('The email you have used contains bad characters.'));
+        if (user_validate_name($values['register']['name'])) {
+          $form_state->setErrorByName('name', $this->t('The name you have used contains bad characters.'));
           return;
         }
 
         // Create the new account.
         $account = $this->entityTypeManager->getStorage('user')->create([]);
         $account->setEmail($values['register']['mail']);
-        $account->setUsername($values['register']['mail']);
+        $account->setUsername($values['register']['name']);
         $account->setPassword($values['register']['pass']);
         $account->enforceIsNew();
         $account->activate();
-        $account->save();
 
-        // Login.
+        // Check for violations.
+        $violations = $account->validate();
+        foreach ($violations->getEntityViolations() as $violation) {
+          /** @var \Symfony\Component\Validator\ConstraintViolationInterface $violation */
+          $form_state->setErrorByName('', $violation->getMessage());
+        }
+
+        // If all went well, we can save the user and add the uid to the form.
+        $account->save();
         $form_state->set('logged_in_uid', $account->id());
-        drupal_set_message($this->t('Registration successful. You can now continue the checkout.'));
         break;
 
       default:
