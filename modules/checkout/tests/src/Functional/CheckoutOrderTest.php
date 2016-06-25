@@ -180,11 +180,11 @@ class CheckoutOrderTest extends CommerceBrowserTestBase {
     $this->submitForm([], 'Checkout');
     $this->assertSession()->pageTextContains('Create new account');
     $this->submitForm([
+      'login[register][name]' => 'User name',
       'login[register][mail]' => 'guest@example.com',
       'login[register][pass][pass1]' => 'pass',
       'login[register][pass][pass2]' => 'pass',
     ], 'Create account and continue');
-    $this->assertSession()->pageTextContains('Registration successful. You can now continue the checkout.');
     $this->assertSession()->pageTextContains('Billing information');
 
     // Test various validations. We first redo the same as above to emulate a
@@ -199,22 +199,25 @@ class CheckoutOrderTest extends CommerceBrowserTestBase {
 
     // Already used e-mail.
     $this->submitForm([
+      'login[register][name]' => 'User name double email',
       'login[register][mail]' => 'guest@example.com',
       'login[register][pass][pass1]' => 'pass',
       'login[register][pass][pass2]' => 'pass',
     ], 'Create account and continue');
     $this->assertSession()->pageTextContains('A user is already registered with this email.');
 
-    // Invalid characters.
+    // Invalid characters in username.
     $this->submitForm([
-      'login[register][mail]' => 'guest@#.com',
+      'login[register][name]' => 'User @#.``^ ù % name invalid',
+      'login[register][mail]' => 'guest2@example.com',
       'login[register][pass][pass1]' => 'pass',
       'login[register][pass][pass2]' => 'pass',
     ], 'Create account and continue');
-    $this->assertSession()->pageTextContains('The email you have used contains bad characters.');
+    $this->assertSession()->pageTextContains('The name you have used contains bad characters.');
 
     // Empty e-mail.
     $this->submitForm([
+      'login[register][name]' => 'Missing name',
       'login[register][mail]' => '',
       'login[register][pass][pass1]' => 'pass',
       'login[register][pass][pass2]' => 'pass',
@@ -223,6 +226,7 @@ class CheckoutOrderTest extends CommerceBrowserTestBase {
 
     // Empty password.
     $this->submitForm([
+      'login[register][name]' => 'Missing password',
       'login[register][mail]' => 'valid@example.com',
       'login[register][pass][pass1]' => '',
       'login[register][pass][pass2]' => '',
