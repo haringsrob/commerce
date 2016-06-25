@@ -265,6 +265,12 @@ class Login extends CheckoutPaneBase implements CheckoutPaneInterface, Container
         ],
       ],
     ];
+    $pane_form['register']['mail'] = [
+      '#type' => 'email',
+      '#title' => $this->t('Email address'),
+      '#description' => $this->t('A valid email address. All emails from the system will be sent to this address. The email address is not made public and will only be used if you wish to receive a new password or wish to receive certain news or notifications by email.'),
+      '#required' => FALSE,
+    ];
     $pane_form['register']['name'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Username'),
@@ -278,12 +284,6 @@ class Login extends CheckoutPaneBase implements CheckoutPaneInterface, Container
         'spellcheck' => 'false',
       ],
       '#default_value' => '',
-    ];
-    $pane_form['register']['mail'] = [
-      '#type' => 'email',
-      '#title' => $this->t('Email address'),
-      '#description' => $this->t('A valid email address. All emails from the system will be sent to this address. The email address is not made public and will only be used if you wish to receive a new password or wish to receive certain news or notifications by email.'),
-      '#required' => FALSE,
     ];
     $pane_form['register']['pass'] = [
       '#type' => 'password_confirm',
@@ -382,7 +382,6 @@ class Login extends CheckoutPaneBase implements CheckoutPaneInterface, Container
         $account->setEmail($values['register']['mail']);
         $account->setUsername($values['register']['name']);
         $account->setPassword($values['register']['pass']);
-        $account->enforceIsNew();
         $account->activate();
 
         // Check for violations.
