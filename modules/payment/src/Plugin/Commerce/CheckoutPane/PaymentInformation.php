@@ -323,7 +323,7 @@ class PaymentInformation extends CheckoutPaneBase {
     }
 
     if ($payment_gateway->getPlugin() instanceof SupportsStoredPaymentMethodsInterface) {
-      if (!empty($selected_option->getPaymentMethodTypeId())) {
+      if ($selected_option->getPaymentMethodTypeId() !== NULL) {
         // The payment method was just created.
         $payment_method = $values['add_payment_method'];
       }
@@ -332,9 +332,6 @@ class PaymentInformation extends CheckoutPaneBase {
         $payment_method_storage = $this->entityTypeManager->getStorage('commerce_payment_method');
         /** @var \Drupal\commerce_payment\Entity\PaymentMethodInterface $payment_method */
         $payment_method = $payment_method_storage->load($selected_option->getPaymentMethodId());
-      }
-      else {
-        $payment_method = $values['add_payment_method'];
       }
 
       $payment_gateway = $payment_method->getPaymentGateway();
