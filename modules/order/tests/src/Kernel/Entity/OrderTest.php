@@ -6,6 +6,7 @@ use Drupal\commerce_order\Adjustment;
 use Drupal\commerce_order\Entity\Order;
 use Drupal\commerce_order\Entity\OrderItem;
 use Drupal\commerce_order\Entity\OrderItemType;
+use Drupal\commerce_price\Exception\CurrencyMismatchException;
 use Drupal\commerce_price\Price;
 use Drupal\profile\Entity\Profile;
 use Drupal\Tests\commerce\Kernel\CommerceKernelTestBase;
@@ -89,15 +90,20 @@ class OrderTest extends CommerceKernelTestBase {
    * @covers ::getAdjustments
    * @covers ::setAdjustments
    * @covers ::addAdjustment
+   * @covers ::removeAdjustment
+   * @covers ::clearAdjustments
    * @covers ::collectAdjustments
-   * @covers ::recalculateTotalPrice
    * @covers ::getSubtotalPrice
+   * @covers ::recalculateTotalPrice
    * @covers ::getTotalPrice
    * @covers ::getState
    * @covers ::getRefreshState
    * @covers ::setRefreshState
    * @covers ::getData
    * @covers ::setData
+   * @covers ::isLocked
+   * @covers ::lock
+   * @covers ::unlock
    * @covers ::getCreatedTime
    * @covers ::setCreatedTime
    * @covers ::getPlacedTime
@@ -115,6 +121,7 @@ class OrderTest extends CommerceKernelTestBase {
     /** @var \Drupal\commerce_order\Entity\OrderItemInterface $order_item */
     $order_item = OrderItem::create([
       'type' => 'test',
+      'quantity' => '1',
       'unit_price' => new Price('2.00', 'USD'),
     ]);
     $order_item->save();
@@ -174,8 +181,8 @@ class OrderTest extends CommerceKernelTestBase {
     $order->addItem($another_order_item);
     $this->assertEquals([$order_item, $another_order_item], $order->getItems());
     $this->assertNotEmpty($order->hasItem($another_order_item));
-
     $this->assertEquals(new Price('8.00', 'USD'), $order->getTotalPrice());
+
     $adjustments = [];
     $adjustments[] = new Adjustment([
       'type' => 'custom',
@@ -183,13 +190,13 @@ class OrderTest extends CommerceKernelTestBase {
       'amount' => new Price('-1.00', 'USD'),
     ]);
     $adjustments[] = new Adjustment([
-      'type' => 'custom',
+      'type' => 'fee',
       'label' => 'Handling fee',
       'amount' => new Price('10.00', 'USD'),
+      'locked' => TRUE,
     ]);
     $order->addAdjustment($adjustments[0]);
     $order->addAdjustment($adjustments[1]);
-    $adjustments = $order->getAdjustments();
     $this->assertEquals($adjustments, $order->getAdjustments());
     $collected_adjustments = $order->collectAdjustments();
     $this->assertEquals($adjustments[0]->getAmount(), $collected_adjustments[0]->getAmount());
@@ -201,18 +208,15 @@ class OrderTest extends CommerceKernelTestBase {
     $order->setAdjustments($adjustments);
     $this->assertEquals($adjustments, $order->getAdjustments());
     $this->assertEquals(new Price('17.00', 'USD'), $order->getTotalPrice());
-    // Add an adjustment to the second order item, confirm it's a part of the
-    // order total, multiplied by quantity.
-    $order->removeItem($another_order_item);
-    $another_order_item->addAdjustment(new Adjustment([
-      'type' => 'custom',
+    // Confirm that locked adjustments persist after clear.
+    // Custom adjustments are locked by default.
+    $order->addAdjustment(new Adjustment([
+      'type' => 'fee',
       'label' => 'Random fee',
-      'amount' => new Price('5.00', 'USD'),
+      'amount' => new Price('10.00', 'USD'),
     ]));
-    $order->addItem($another_order_item);
-    $this->assertEquals(new Price('27.00', 'USD'), $order->getTotalPrice());
-    $collected_adjustments = $order->collectAdjustments();
-    $this->assertEquals(new Price('10.00', 'USD'), $collected_adjustments[2]->getAmount());
+    $order->clearAdjustments();
+    $this->assertEquals($adjustments, $order->getAdjustments());
 
     $this->assertEquals('completed', $order->getState()->value);
 
@@ -223,6 +227,12 @@ class OrderTest extends CommerceKernelTestBase {
     $order->setData('test', 'value');
     $this->assertEquals('value', $order->getData('test', 'default'));
 
+    $this->assertFalse($order->isLocked());
+    $order->lock();
+    $this->assertTrue($order->isLocked());
+    $order->unlock();
+    $this->assertFalse($order->isLocked());
+
     $order->setCreatedTime(635879700);
     $this->assertEquals(635879700, $order->getCreatedTime());
 
@@ -231,6 +241,201 @@ class OrderTest extends CommerceKernelTestBase {
 
     $order->setCompletedTime(635879900);
     $this->assertEquals(635879900, $order->getCompletedTime());
+  }
+
+  /**
+   * Tests the handling of legacy order item adjustments on adjustment clear.
+   *
+   * @covers ::clearAdjustments
+   * @covers ::collectAdjustments
+   */
+  public function testHandlingLegacyOrderItemAdjustments() {
+    /** @var \Drupal\commerce_order\Entity\OrderItemInterface $order_item */
+    $order_item = OrderItem::create([
+      'type' => 'test',
+      'quantity' => '2',
+      'unit_price' => new Price('10.00', 'USD'),
+      'adjustments' => [
+        new Adjustment([
+          'type' => 'custom',
+          'label' => '10% off',
+          'amount' => new Price('-1.00', 'USD'),
+          'percentage' => '0.1',
+        ]),
+        new Adjustment([
+          'type' => 'fee',
+          'label' => 'Random fee',
+          'amount' => new Price('2.00', 'USD'),
+        ]),
+      ],
+      'uses_legacy_adjustments' => TRUE,
+    ]);
+    $order_item->save();
+
+    $order = Order::create([
+      'type' => 'default',
+      'order_items' => [$order_item],
+      'state' => 'draft',
+    ]);
+
+    // Confirm that legacy adjustments are multiplied by quantity.
+    $adjustments = $order->collectAdjustments();
+    $this->assertCount(2, $adjustments);
+    $this->assertEquals('-2.00', $adjustments[0]->getAmount()->getNumber());
+    $this->assertEquals('4.00', $adjustments[1]->getAmount()->getNumber());
+
+    // Confirm that the legacy order item adjustments are converted on clear.
+    $order->clearAdjustments();
+    $order_items = $order->getItems();
+    $order_item = reset($order_items);
+    $adjustments = $order_item->getAdjustments();
+
+    $this->assertFalse($order_item->usesLegacyAdjustments());
+    $this->assertCount(1, $adjustments);
+    $this->assertEquals('-2.00', $adjustments[0]->getAmount()->getNumber());
+
+    // The order item adjustments are no longer multiplied by quantity.
+    $this->assertEquals($adjustments, $order->collectAdjustments());
+  }
+
+  /**
+   * Tests the order total recalculation logic.
+   *
+   * @covers ::recalculateTotalPrice
+   */
+  public function testTotalCalculation() {
+    $order = Order::create([
+      'type' => 'default',
+      'state' => 'completed',
+    ]);
+    $order->save();
+
+    /** @var \Drupal\commerce_order\Entity\OrderItemInterface $order_item */
+    $order_item = OrderItem::create([
+      'type' => 'test',
+      'quantity' => '2',
+      'unit_price' => new Price('2.00', 'USD'),
+    ]);
+    $order_item->save();
+    $order_item = $this->reloadEntity($order_item);
+    /** @var \Drupal\commerce_order\Entity\OrderItemInterface $another_order_item */
+    $another_order_item = OrderItem::create([
+      'type' => 'test',
+      'quantity' => '1',
+      'unit_price' => new Price('3.00', 'USD'),
+    ]);
+    $another_order_item->save();
+    $another_order_item = $this->reloadEntity($another_order_item);
+
+    $adjustments = [];
+    $adjustments[0] = new Adjustment([
+      'type' => 'tax',
+      'label' => 'Tax',
+      'amount' => new Price('100.00', 'USD'),
+      'included' => TRUE,
+    ]);
+    $adjustments[1] = new Adjustment([
+      'type' => 'tax',
+      'label' => 'Tax',
+      'amount' => new Price('2.121', 'USD'),
+      'source_id' => 'us_sales_tax',
+    ]);
+    $adjustments[2] = new Adjustment([
+      'type' => 'tax',
+      'label' => 'Tax',
+      'amount' => new Price('5.344', 'USD'),
+      'source_id' => 'us_sales_tax',
+    ]);
+
+    // Included adjustments do not affect the order total.
+    $order->addAdjustment($adjustments[0]);
+    $order_item->addAdjustment($adjustments[1]);
+    $another_order_item->addAdjustment($adjustments[2]);
+    $order->setItems([$order_item, $another_order_item]);
+
+    $collected_adjustments = $order->collectAdjustments();
+    $this->assertCount(3, $collected_adjustments);
+    $this->assertEquals($adjustments[1], $collected_adjustments[0]);
+    $this->assertEquals($adjustments[2], $collected_adjustments[1]);
+    $this->assertEquals($adjustments[0], $collected_adjustments[2]);
+    // The total will be correct only if the adjustments were correctly
+    // combined, and rounded.
+    $this->assertEquals(new Price('14.47', 'USD'), $order->getTotalPrice());
+  }
+
+  /**
+   * Tests the order with order items using different currencies.
+   *
+   * @covers ::getSubtotalPrice
+   * @covers ::recalculateTotalPrice
+   * @covers ::getTotalPrice
+   */
+  public function testMultipleCurrencies() {
+    $currency_importer = \Drupal::service('commerce_price.currency_importer');
+    $currency_importer->import('EUR');
+
+    $usd_order_item = OrderItem::create([
+      'type' => 'test',
+      'quantity' => '1',
+      'unit_price' => new Price('2.00', 'USD'),
+    ]);
+    $usd_order_item->save();
+    $eur_order_item = OrderItem::create([
+      'type' => 'test',
+      'quantity' => '1',
+      'unit_price' => new Price('3.00', 'EUR'),
+    ]);
+    $eur_order_item->save();
+
+    $order = Order::create([
+      'type' => 'default',
+      'state' => 'completed',
+    ]);
+    $order->save();
+
+    // The order currency should match the currency of the first order item.
+    $this->assertNull($order->getTotalPrice());
+    $order->addItem($usd_order_item);
+    $this->assertEquals($usd_order_item->getTotalPrice(), $order->getTotalPrice());
+
+    // Replacing the order item should replace the order total and its currency.
+    $order->removeItem($usd_order_item);
+    $order->addItem($eur_order_item);
+    $this->assertEquals($eur_order_item->getTotalPrice(), $order->getTotalPrice());
+
+    // Adding a second order item with a different currency should fail.
+    $currency_mismatch = FALSE;
+    try {
+      $order->addItem($usd_order_item);
+    }
+    catch (CurrencyMismatchException $e) {
+      $currency_mismatch = TRUE;
+    }
+    $this->assertTrue($currency_mismatch);
+  }
+
+  /**
+   * Tests that an order's email updates with the customer.
+   */
+  public function testOrderEmail() {
+    $customer = $this->createUser(['mail' => 'test@example.com']);
+    $order_with_customer = Order::create([
+      'type' => 'default',
+      'state' => 'completed',
+      'uid' => $customer,
+    ]);
+    $order_with_customer->save();
+    $this->assertEquals($customer->getEmail(), $order_with_customer->getEmail());
+
+    $order_without_customer = Order::create([
+      'type' => 'default',
+      'state' => 'completed',
+    ]);
+    $order_without_customer->save();
+    $this->assertEquals('', $order_without_customer->getEmail());
+    $order_without_customer->setCustomer($customer);
+    $order_without_customer->save();
+    $this->assertEquals($customer->getEmail(), $order_without_customer->getEmail());
   }
 
 }

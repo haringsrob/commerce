@@ -4,6 +4,7 @@ namespace Drupal\commerce_cart;
 
 use Drupal\commerce_cart\Exception\DuplicateCartException;
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_store\CurrentStoreInterface;
 use Drupal\commerce_store\Entity\StoreInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -19,6 +20,13 @@ class CartProvider implements CartProviderInterface {
    * @var \Drupal\Core\Entity\EntityStorageInterface
    */
   protected $orderStorage;
+
+  /**
+   * The current store.
+   *
+   * @var \Drupal\commerce_store\CurrentStoreInterface
+   */
+  protected $currentStore;
 
   /**
    * The current user.
@@ -57,13 +65,16 @@ class CartProvider implements CartProviderInterface {
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Drupal\commerce_store\CurrentStoreInterface $current_store
+   *   The current store.
    * @param \Drupal\Core\Session\AccountInterface $current_user
    *   The current user.
    * @param \Drupal\commerce_cart\CartSessionInterface $cart_session
    *   The cart session.
    */
-  public function __construct(EntityTypeManagerInterface $entity_type_manager, AccountInterface $current_user, CartSessionInterface $cart_session) {
+  public function __construct(EntityTypeManagerInterface $entity_type_manager, CurrentStoreInterface $current_store, AccountInterface $current_user, CartSessionInterface $cart_session) {
     $this->orderStorage = $entity_type_manager->getStorage('commerce_order');
+    $this->currentStore = $current_store;
     $this->currentUser = $current_user;
     $this->cartSession = $cart_session;
   }
@@ -71,7 +82,8 @@ class CartProvider implements CartProviderInterface {
   /**
    * {@inheritdoc}
    */
-  public function createCart($order_type, StoreInterface $store, AccountInterface $account = NULL) {
+  public function createCart($order_type, StoreInterface $store = NULL, AccountInterface $account = NULL) {
+    $store = $store ?: $this->currentStore->getStore();
     $account = $account ?: $this->currentUser;
     $uid = $account->id();
     $store_id = $store->id();
@@ -124,7 +136,7 @@ class CartProvider implements CartProviderInterface {
   /**
    * {@inheritdoc}
    */
-  public function getCart($order_type, StoreInterface $store, AccountInterface $account = NULL) {
+  public function getCart($order_type, StoreInterface $store = NULL, AccountInterface $account = NULL) {
     $cart = NULL;
     $cart_id = $this->getCartId($order_type, $store, $account);
     if ($cart_id) {
@@ -137,10 +149,11 @@ class CartProvider implements CartProviderInterface {
   /**
    * {@inheritdoc}
    */
-  public function getCartId($order_type, StoreInterface $store, AccountInterface $account = NULL) {
+  public function getCartId($order_type, StoreInterface $store = NULL, AccountInterface $account = NULL) {
     $cart_id = NULL;
     $cart_data = $this->loadCartData($account);
     if ($cart_data) {
+      $store = $store ?: $this->currentStore->getStore();
       $search = [
         'type' => $order_type,
         'store_id' => $store->id(),
@@ -173,6 +186,13 @@ class CartProvider implements CartProviderInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function clearCaches() {
+    $this->cartData = [];
+  }
+
+  /**
    * Loads the cart data for the given user.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
@@ -190,6 +210,7 @@ class CartProvider implements CartProviderInterface {
 
     if ($account->isAuthenticated()) {
       $query = $this->orderStorage->getQuery()
+        ->condition('state', 'draft')
         ->condition('cart', TRUE)
         ->condition('uid', $account->id())
         ->sort('order_id', 'DESC');
@@ -203,14 +224,20 @@ class CartProvider implements CartProviderInterface {
     if (!$cart_ids) {
       return [];
     }
-    // Getting the cart data and validating the cart ids received from the
+    // Getting the cart data and validating the cart IDs received from the
     // session requires loading the entities. This is a performance hit, but
     // it's assumed that these entities would be loaded at one point anyway.
     /** @var \Drupal\commerce_order\Entity\OrderInterface[] $carts */
     $carts = $this->orderStorage->loadMultiple($cart_ids);
+    $non_eligible_cart_ids = [];
     foreach ($carts as $cart) {
-      if ($cart->getCustomerId() != $uid || empty($cart->cart)) {
-        // Skip orders that are no longer eligible.
+      if ($cart->isLocked()) {
+        // Skip locked carts, the customer is probably off-site for payment.
+        continue;
+      }
+      if ($cart->getCustomerId() != $uid || empty($cart->cart) || $cart->getState()->value != 'draft') {
+        // Skip carts that are no longer eligible.
+        $non_eligible_cart_ids[] = $cart->id();
         continue;
       }
 
@@ -218,6 +245,12 @@ class CartProvider implements CartProviderInterface {
         'type' => $cart->bundle(),
         'store_id' => $cart->getStoreId(),
       ];
+    }
+    // Avoid loading non-eligible carts on the next page load.
+    if (!$account->isAuthenticated()) {
+      foreach ($non_eligible_cart_ids as $cart_id) {
+        $this->cartSession->deleteCartId($cart_id);
+      }
     }
 
     return $this->cartData[$uid];

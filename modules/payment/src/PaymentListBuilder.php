@@ -2,12 +2,12 @@
 
 namespace Drupal\commerce_payment;
 
-use Drupal\commerce_price\Entity\Currency;
-use Drupal\commerce_price\NumberFormatterFactoryInterface;
+use CommerceGuys\Intl\Formatter\CurrencyFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -17,11 +17,18 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class PaymentListBuilder extends EntityListBuilder {
 
   /**
-   * The number formatter.
+   * The currency formatter.
    *
-   * @var \CommerceGuys\Intl\Formatter\NumberFormatterInterface
+   * @var \CommerceGuys\Intl\Formatter\CurrencyFormatterInterface
    */
-  protected $numberFormatter;
+  protected $currencyFormatter;
+
+  /**
+   * The current route match.
+   *
+   * @var \Drupal\Core\Routing\RouteMatchInterface
+   */
+  protected $routeMatch;
 
   /**
    * {@inheritdoc}
@@ -35,13 +42,16 @@ class PaymentListBuilder extends EntityListBuilder {
    *   The entity type definition.
    * @param \Drupal\Core\Entity\EntityStorageInterface $storage
    *   The entity storage class.
-   * @param \Drupal\commerce_price\NumberFormatterFactoryInterface $number_formatter_factory
-   *   The number formatter factory.
+   * @param \CommerceGuys\Intl\Formatter\CurrencyFormatterInterface $currency_formatter
+   *   The currency formatter.
+   * @param \Drupal\Core\Routing\RouteMatchInterface $route_match
+   *   The current route match.
    */
-  public function __construct(EntityTypeInterface $entity_type, EntityStorageInterface $storage, NumberFormatterFactoryInterface $number_formatter_factory) {
+  public function __construct(EntityTypeInterface $entity_type, EntityStorageInterface $storage, CurrencyFormatterInterface $currency_formatter, RouteMatchInterface $route_match) {
     parent::__construct($entity_type, $storage);
 
-    $this->numberFormatter = $number_formatter_factory->createInstance();
+    $this->currencyFormatter = $currency_formatter;
+    $this->routeMatch = $route_match;
   }
 
   /**
@@ -51,7 +61,8 @@ class PaymentListBuilder extends EntityListBuilder {
     return new static(
       $entity_type,
       $container->get('entity.manager')->getStorage($entity_type->id()),
-      $container->get('commerce_price.number_formatter_factory')
+      $container->get('commerce_price.currency_formatter'),
+      $container->get('current_route_match')
     );
   }
 
@@ -65,19 +76,9 @@ class PaymentListBuilder extends EntityListBuilder {
   /**
    * {@inheritdoc}
    */
-  protected function getEntityIds() {
-    /** @var \Drupal\Core\Routing\RouteMatchInterface $route */
-    $route = \Drupal::service('current_route_match');
-    $order = $route->getParameter('commerce_order');
-
-    $query = $this->getStorage()->getQuery()
-      ->condition('order_id', $order)
-      ->sort('payment_id');
-    // Only add the pager if a limit is specified.
-    if ($this->limit) {
-      $query->pager($this->limit);
-    }
-    return $query->execute();
+  public function load() {
+    $order = $this->routeMatch->getParameter('commerce_order');
+    return $this->storage->loadMultipleByOrder($order);
   }
 
   /**
@@ -118,8 +119,9 @@ class PaymentListBuilder extends EntityListBuilder {
    */
   public function buildHeader() {
     $header['label'] = $this->t('Payment');
-    $header['remote_id'] = $this->t('Remote ID');
     $header['state'] = $this->t('State');
+    $header['payment_gateway'] = $this->t('Payment gateway');
+    $header['remote_id'] = $this->t('Remote ID');
     return $header + parent::buildHeader();
   }
 
@@ -129,17 +131,18 @@ class PaymentListBuilder extends EntityListBuilder {
   public function buildRow(EntityInterface $entity) {
     /** @var \Drupal\commerce_payment\Entity\PaymentInterface $entity */
     $amount = $entity->getAmount();
-    // @todo Refactor the number formatter to work with just a currency code.
-    $currency = Currency::load($amount->getCurrencyCode());
-    $formatted_amount = $this->numberFormatter->formatCurrency($amount->getNumber(), $currency);
+    $formatted_amount = $this->currencyFormatter->format($amount->getNumber(), $amount->getCurrencyCode());
     $refunded_amount = $entity->getRefundedAmount();
     if ($refunded_amount && !$refunded_amount->isZero()) {
-      $formatted_amount .= ' Refunded: ' . $this->numberFormatter->formatCurrency($refunded_amount->getNumber(), $currency);
+      $formatted_amount .= ' ' . $this->t('Refunded:') . ' ';
+      $formatted_amount .= $this->currencyFormatter->format($refunded_amount->getNumber(), $refunded_amount->getCurrencyCode());
     }
+    $payment_gateway = $entity->getPaymentGateway();
 
     $row['label'] = $formatted_amount;
-    $row['remote_id'] = $entity->getRemoteId();
     $row['state'] = $entity->getState()->getLabel();
+    $row['payment_gateway'] = $payment_gateway ? $payment_gateway->label() : '';
+    $row['remote_id'] = $entity->getRemoteId() ?: $this->t('N/A');
 
     return $row + parent::buildRow($entity);
   }

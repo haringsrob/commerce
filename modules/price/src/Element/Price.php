@@ -18,6 +18,7 @@ use Drupal\Core\Render\Element\FormElement;
  *   '#size' => 60,
  *   '#maxlength' => 128,
  *   '#required' => TRUE,
+ *   '#available_currencies' => ['USD', 'EUR'],
  * ];
  * @endcode
  *
@@ -31,12 +32,20 @@ class Price extends FormElement {
   public function getInfo() {
     $class = get_class($this);
     return [
+      // List of currencies codes. If empty, all currencies will be available.
+      '#available_currencies' => [],
+      // The check is performed here so that it is cached.
+      '#price_inline_errors' => \Drupal::moduleHandler()->moduleExists('inline_form_errors'),
+
       '#size' => 10,
       '#maxlength' => 128,
       '#default_value' => NULL,
       '#allow_negative' => FALSE,
       '#attached' => [
         'library' => ['commerce_price/admin'],
+      ],
+      '#element_validate' => [
+        [$class, 'moveInlineErrors'],
       ],
       '#process' => [
         [$class, 'processElement'],
@@ -79,6 +88,11 @@ class Price extends FormElement {
     /** @var \Drupal\commerce_price\Entity\CurrencyInterface[] $currencies */
     $currencies = $currency_storage->loadMultiple();
     $currency_codes = array_keys($currencies);
+    // Keep only available currencies.
+    $available_currencies = $element['#available_currencies'];
+    if (isset($available_currencies) && !empty($available_currencies)) {
+      $currency_codes = array_intersect($currency_codes, $available_currencies);
+    }
     // Stop rendering if there are no currencies available.
     if (empty($currency_codes)) {
       return $element;
@@ -94,17 +108,18 @@ class Price extends FormElement {
     $element['number'] = [
       '#type' => 'commerce_number',
       '#title' => $element['#title'],
+      '#title_display' => $element['#title_display'],
       '#default_value' => $default_value ? $default_value['number'] : NULL,
       '#required' => $element['#required'],
       '#size' => $element['#size'],
       '#maxlength' => $element['#maxlength'],
       '#min_fraction_digits' => min($fraction_digits),
-      // '6' is the field storage maximum.
-      '#max_fraction_digits' => 6,
       '#min' => $element['#allow_negative'] ? NULL : 0,
+      '#error_no_message' => TRUE,
     ];
-    unset($element['#size']);
-    unset($element['#maxlength']);
+    if (isset($element['#ajax'])) {
+      $element['number']['#ajax'] = $element['#ajax'];
+    }
 
     if (count($currency_codes) == 1) {
       $last_visible_element = 'number';
@@ -125,11 +140,18 @@ class Price extends FormElement {
         '#title_display' => 'invisible',
         '#field_suffix' => '',
       ];
+      if (isset($element['#ajax'])) {
+        $element['currency_code']['#ajax'] = $element['#ajax'];
+      }
     }
     // Add the help text if specified.
     if (!empty($element['#description'])) {
       $element[$last_visible_element]['#field_suffix'] .= '<div class="description">' . $element['#description'] . '</div>';
     }
+    // Remove the keys that were transferred to child elements.
+    unset($element['#size']);
+    unset($element['#maxlength']);
+    unset($element['#ajax']);
 
     return $element;
   }
@@ -151,6 +173,26 @@ class Price extends FormElement {
       return FALSE;
     }
     return TRUE;
+  }
+
+  /**
+   * Moves inline errors from the "number" element to the main element.
+   *
+   * This ensures that they are displayed in the right place
+   * (below both number and currency_code, instead of between them).
+   *
+   * Only performed when the inline_form_errors module is installed.
+   *
+   * @param array $element
+   *   The form element.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The current state of the form.
+   */
+  public static function moveInlineErrors(array $element, FormStateInterface $form_state) {
+    $error = $form_state->getError($element['number']);
+    if (!empty($error) && !empty($element['#price_inline_errors'])) {
+      $form_state->setError($element, $error);
+    }
   }
 
 }

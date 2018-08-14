@@ -43,6 +43,13 @@ class PriceElementTest extends CommerceBrowserTestBase {
     ];
     $this->submitForm($edit, 'Submit');
     $this->assertSession()->pageTextContains('The number is "10.99" and the currency code is "USD".');
+
+    // Ensure that the form titles are displayed as expected.
+    $elements = $this->xpath('//input[@id="edit-amount-hidden-title-number"]/preceding-sibling::label[@for="edit-amount-hidden-title-number" and contains(@class, "visually-hidden")]');
+    $this->assertTrue(isset($elements[0]), 'Label preceding field and label class is visually-hidden.');
+
+    $elements = $this->xpath('//input[@id="edit-amount-number"]/preceding-sibling::label[@for="edit-amount-number" and not(contains(@class, "visually-hidden"))]');
+    $this->assertTrue(isset($elements[0]), 'Label preceding field and label class is not visually visually-hidden.');
   }
 
   /**
@@ -50,6 +57,7 @@ class PriceElementTest extends CommerceBrowserTestBase {
    */
   public function testMultipleCurrency() {
     $this->container->get('commerce_price.currency_importer')->import('EUR');
+    $this->container->get('commerce_price.currency_importer')->import('CHF');
 
     $this->drupalGet('/commerce_price_test/price_test_form');
     $this->assertSession()->fieldExists('amount[number]');
@@ -59,6 +67,8 @@ class PriceElementTest extends CommerceBrowserTestBase {
     $this->assertSession()->optionExists('amount[currency_code]', 'EUR');
     $element = $this->assertSession()->optionExists('amount[currency_code]', 'USD');
     $this->assertNotEmpty($element->isSelected());
+    // CHF is not in #availabe_currencies so it must not be present.
+    $this->assertSession()->optionNotExists('amount[currency_code]', 'CHF');
 
     // Invalid submit.
     $edit = [

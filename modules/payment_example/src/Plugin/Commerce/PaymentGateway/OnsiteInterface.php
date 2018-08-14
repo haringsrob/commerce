@@ -6,6 +6,7 @@ use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OnsitePaymentGatewayI
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsAuthorizationsInterface;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsCreatingStoredPaymentMethodsInterface;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsRefundsInterface;
+use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsUpdatingStoredPaymentMethodsInterface;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsStoredPaymentMethodsInterface;
 
 /**
@@ -16,6 +17,6 @@ use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsStoredPayment
  * the gateway has. The gateway plugin is free to expose additional methods,
  * which would be defined below.
  */
-interface OnsiteInterface extends OnsitePaymentGatewayInterface, SupportsStoredPaymentMethodsInterface, SupportsCreatingStoredPaymentMethodsInterface, SupportsAuthorizationsInterface, SupportsRefundsInterface {
+interface OnsiteInterface extends OnsitePaymentGatewayInterface, SupportsStoredPaymentMethodsInterface, SupportsCreatingStoredPaymentMethodsInterface, SupportsAuthorizationsInterface, SupportsRefundsInterface, SupportsUpdatingStoredPaymentMethodsInterface {
 
 }
